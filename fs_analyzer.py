@@ -11,7 +11,7 @@ num_of_files = 0
 num_of_dirs = 0
 
 
-def print_all_files_and_dirs():
+def print_all_files_and_dirs(): # @TODO there is a bug that is causing this function to ignore some dirs. Fix it.
     # root_dir is the parent of all dirs
     root_dir = get_root_dir()
 
