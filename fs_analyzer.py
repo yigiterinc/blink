@@ -2,57 +2,15 @@ import getpass
 import sys
 import ctypes
 import os
-import datetime
 import time
 import heapq
-import pathlib
 from numpy import unicode
+from File import File
+from HashableHeap import HashableHeap
 
-
-class File:
-    path = ''  # (abspath)
-    extension = ''
-    size = 0
-    last_access_date = datetime.time  # @TODO learn how to define a date obj.
-
-    def __init__(self, path):
-        file_stats = os.stat(path)  # Make a syscall to os to get file stats
-        # Get last access time
-        self.last_access_date = time.ctime(file_stats.st_atime)
-        self.path = path
-        self.size = os.path.getsize(path)
-        if sys.platform.startswith('win32' or 'nt'):  # Windows based system
-            self.extension = pathlib.PureWindowsPath(path).suffix
-        else:  # Unix based system
-            self.extension = pathlib.PurePosixPath(path).suffix
-
-    def __lt__(self, other):  # Comparator of the files by their sizes, used by the heap
-        return self.size > other.size
-
-    # def get_time_since_last_access(self):  # @TODO fix this
-    #     today = datetime.date.today()
-    #     return today - self.last_access_date
-
-
-class hashableHeap:  # wrapper class for heaps, required for the extension based hashing
-    heap = []
-    extension = ''
-    size = 0
-
-    def __init__(self, extension):
-        self.extension = extension
-
-    def __hash__(self):
-        hash(self.extension)
-
-
-special_dirs = ['Library']  # @TODO Make use of this.
 user_os = sys.platform
-
 num_of_files = 0
 ROOT_DIR = ''
-# this is the heap to store File objects in sorted order of sizes, allowing us to perform a lookup in log(n)
-# file_heap = []
 extension_dictionary = {}  # this hash table (dictionary) hashes the extensions to the corresponding max heaps
 
 
@@ -73,11 +31,16 @@ def find_all_files_and_dirs(root_dir):
             print('Current element is a special file (Socket, FIFO, device file, ...)')
 
 
-def print_files():
+def print_all_files():
     for key, extension_heap in extension_dictionary.items():
         print('--- Printing ' + key + ' items' + ' total size is: ' + str(extension_heap.size) + ' ---')
-        for item in extension_heap.heap:
-            print(item.path + ' size:' + str(item.size))
+        print_heap(extension_heap)
+
+
+def print_heap(extension_heap):
+    for item in extension_heap.heap:
+        print(item.path + ' size:' + str(item.size) + ' Time since last access: ' + str(
+            File.get_time_since_last_access(item)))
 
 
 def print_size_ext_pairs():
@@ -99,12 +62,13 @@ def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and 
                 hashable_heap.size += f.size
                 heapq.heappush(hashable_heap.heap, f)
             elif f.extension != '':  # if the heap does not exist, create and add with current file
-                new_heap = hashableHeap(f.extension)
+                new_heap = HashableHeap(f.extension)
                 new_heap.size = f.size
                 heapq.heappush(new_heap.heap, f)
                 extension_dictionary[f.extension] = new_heap
         except FileNotFoundError:
-            print('File not found!')
+            print(abs_path + '/' + file)
+            print('No permission')
 
 
 def set_root_dir():
@@ -152,8 +116,8 @@ def has_hidden_attribute(filepath):
 set_root_dir()
 start = time.time()
 find_all_files_and_dirs(ROOT_DIR)
-end = time.time()
 print_size_ext_pairs()
+end = time.time()
 print(num_of_files)
 time_passed = end - start
 print(time_passed)
