@@ -56,7 +56,7 @@ def increment_file_count(amount):
 def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and adds to heap
     for file in directory:
         try:
-            f = File(abs_path + '/' + file)
+            f = File(os.path.join(abs_path, file))
             if f.extension in extension_dictionary.keys():  # check if the corresponding heap exists for extension x
                 hashable_heap = extension_dictionary[f.extension]
                 hashable_heap.size += f.size
@@ -67,7 +67,7 @@ def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and 
                 heapq.heappush(new_heap.heap, f)
                 extension_dictionary[f.extension] = new_heap
         except FileNotFoundError:
-            print(abs_path + '/' + file)
+            print(os.path.join(abs_path, file))
             print('No permission')
 
 
@@ -98,10 +98,14 @@ def is_hidden_dir(file_path):
 
 
 def set_name(file_path):
-    split = file_path.split('/')
-    name = split[-1]  # take the last item
+    split = file_path.split('\\') if user_os_is_windows() else file_path.split('/')
 
+    name = split[-1]  # take the last item
     return name
+
+
+def user_os_is_windows():
+    return user_os.startswith('win32' or 'nt')
 
 
 def has_hidden_attribute(filepath):
@@ -113,6 +117,7 @@ def has_hidden_attribute(filepath):
         return result
 
 
+# TODO take these into a main file
 set_root_dir()
 start = time.time()
 find_all_files_and_dirs(ROOT_DIR)
