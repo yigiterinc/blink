@@ -8,3 +8,6 @@ class HashableHeap:  # wrapper class for heaps, required for the extension based
 
     def __hash__(self):
         hash(self.extension)
+
+    def __lt__(self, other):  # Comparator of the heaps by their sizes
+        return self.size > other.size

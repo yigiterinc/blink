@@ -7,11 +7,19 @@ import heapq
 from numpy import unicode
 from File import File
 from HashableHeap import HashableHeap
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib import cycler
+from matplotlib import colors
+import squarify
 
 user_os = sys.platform
 num_of_files = 0
 ROOT_DIR = ''
-extension_dictionary = {}  # this hash table (dictionary) hashes the extensions to the corresponding max heaps
+extension_dictionary = {}  # this dictionary maps the extensions to the corresponding max heaps
+
+# plot styles are overridden in adjust_plot_style function, hold a reference to defaults to reset if needed
+IPython_default = ''
 
 
 def find_all_files_and_dirs(root_dir):
@@ -45,7 +53,7 @@ def print_heap(extension_heap):
 
 def print_size_ext_pairs():
     for key, extension_heap in extension_dictionary.items():
-        print(key + ' - ' + 'total size: ' + str(extension_heap.size))
+        print(key + ' - ' + 'Total size: ' + format_bytes(extension_heap.size))
 
 
 def increment_file_count(amount):
@@ -78,7 +86,7 @@ def set_root_dir():
         ROOT_DIR = '/Users/' + getpass.getuser()
     elif user_os.startswith('linux'):
         ROOT_DIR = '~'
-    elif user_os.startswith('win32' or 'nt'):
+    elif user_os_is_windows():
         ROOT_DIR = 'C:\\'  # @TODO: find the user files dir in Windows and use it instead to exclude os files
     else:
         print('Your OS is not supported')
@@ -117,12 +125,89 @@ def has_hidden_attribute(filepath):
         return result
 
 
+def adjust_plot_style():
+    IPython_default = plt.rcParams.copy()  # copy the default plot settings
+
+    colors = cycler('color',
+                    ['#EE6666', '#3388BB', '#9988DD',
+                     '#EECC55', '#88BB44', '#FFBBBB'])
+    plt.rc('axes', facecolor='#E6E6E6', edgecolor='none',
+           axisbelow=True, grid=True, prop_cycle=colors)
+    plt.rc('grid', color='w', linestyle='solid')
+    plt.rc('xtick', direction='out', color='gray')
+    plt.rc('ytick', direction='out', color='gray')
+    plt.rc('patch', edgecolor='#E6E6E6')
+    plt.rc('lines', linewidth=2)
+
+
+def plot_extension_vs_totalsize_bar():
+    x, y = get_extension_to_size_array_tuples_sorted()
+
+    plt.figure(figsize=(30, 20))  # width:20, height:3
+    plt.bar(x[0:19], y[0:19], align='edge', width=0.8)  # graph the largest sized 20 extensions
+    plt.title("Extension Distribution by Size", fontsize=23, fontweight="bold")
+    plt.xlabel('Extensions', fontsize=25)
+    plt.ylabel('Total Size (MB)', fontsize=25)
+    plt.xticks(fontsize=20, fontweight='bold')
+    plt.yticks(fontsize=20, fontweight='bold')
+    plt.show()
+
+
+def plot_extension_vs_totalsize_treemap():
+    x, y = get_extension_to_size_array_tuples_sorted()
+
+    # create a color palette, mapped to these values
+    color_map = generate_blue_color_map(y)
+
+    squarify.plot(label=x[0:19], sizes=y[0:19], color=color_map)
+    plt.title("Extension Treemap by Size", fontsize=23, fontweight="bold")
+
+    # Remove our axes and display the plot
+    plt.axis('off')
+    plt.show()
+
+
+def generate_blue_color_map(data_set):
+    cmap = matplotlib.cm.Blues
+    min_value = min(data_set)
+    max_value = max(data_set)
+    norm = matplotlib.colors.Normalize(vmin=min_value, vmax=max_value)
+    return [cmap(norm(value)) for value in data_set]
+
+
+def get_extension_to_size_array_tuples_sorted():
+    x = []
+    y = []
+
+    for w in sorted(extension_dictionary, key=extension_dictionary.get):
+        x.append(w)
+        y.append(extension_dictionary[w].size / 1000000)
+
+    return x, y
+
+
+def format_bytes(size):
+    # 2**10 = 1024
+    power = 2 ** 10
+    n = 0
+    power_labels = {0: '', 1: 'Kilo', 2: 'Mega', 3: 'Giga', 4: 'Tera'}
+    while size > power:
+        size /= power
+        n += 1
+    return str(size) + ' ' + power_labels[n] + 'bytes'
+
+
 # TODO take these into a main file
 set_root_dir()
 start = time.time()
 find_all_files_and_dirs(ROOT_DIR)
 print_size_ext_pairs()
 end = time.time()
-print(num_of_files)
+print('Number of files found: ' + str(num_of_files))
 time_passed = end - start
-print(time_passed)
+print('Analysis duration: ' + str(time_passed))
+adjust_plot_style()
+plot_extension_vs_totalsize_bar()
+plot_extension_vs_totalsize_treemap()
+
+
