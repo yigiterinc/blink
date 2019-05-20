@@ -5,21 +5,32 @@ import os
 import time
 import heapq
 from numpy import unicode
+
+# Project files
 from File import File
 from HashableHeap import HashableHeap
+
+# Plotting related stuff
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib import cycler
 from matplotlib import colors
 import squarify
 
-user_os = sys.platform
-num_of_files = 0
+# Constants
 ROOT_DIR = ''
-extension_dictionary = {}  # this dictionary maps the extensions to the corresponding max heaps
+USER_OS = sys.platform
+NOT_RECENTLY_ACCESSED_THRESHOLD = 30    # Files that have not been accessed in 30 days are not recently accessed
+FILE_SIZE_COEFFICIENT = 80/100
+LAST_ACCESS_DATE_COEFFICIENT = 20/100
+NORMALIZATION_RATE = 1/100000
 
-# plot styles are overridden in adjust_plot_style function, hold a reference to defaults to reset if needed
+# Plot styles are overridden in adjust_plot_style function, hold a reference to defaults to reset if needed
 IPython_default = ''
+
+num_of_files = 0
+extension_dictionary = {}  # this dictionary maps the extensions to the corresponding max heaps
+not_recently_accessed_files = []  # not recently accessed files is a max heap, depending on file sizes
 
 
 def find_all_files_and_dirs(root_dir):
@@ -30,9 +41,6 @@ def find_all_files_and_dirs(root_dir):
         dirs[:] = [d for d in dirs if not is_hidden_dir(d)]
         # special dirs is the list of os specific dirs in MacOS, Linux Dist. and Windows
         if os.path.isdir(path) or os.path.isfile(path):  # Current element is a directory or file
-            for directory in dirs:
-                find_all_files_and_dirs(directory)  # add dirs recursively
-
             add_to_dictionary(files, str(os.path.abspath(path)))  # add the files inside the dir
             increment_file_count(len(files))  # Increment file count with number of files in dir
         else:  # It is a special file if its not either file nor dir
@@ -40,20 +48,21 @@ def find_all_files_and_dirs(root_dir):
 
 
 def print_all_files():
-    for key, extension_heap in extension_dictionary.items():
-        print('--- Printing ' + key + ' items' + ' total size is: ' + str(extension_heap.size) + ' ---')
+    print('*** Printing all files ***')
+    for key, extension_heap in extension_dictionary.items():    # go through dictionary, printing each heap
+        print('--- Printing ' + key + ' items' + ' total size is: ' + str(extension_heap.total_size) + ' ---')
         print_heap(extension_heap)
 
 
 def print_heap(extension_heap):
     for item in extension_heap.heap:
         print(item.path + ' size:' + str(item.size) + ' Time since last access: ' + str(
-            File.get_time_since_last_access(item)))
+              str(item.time_since_last_access) + ' days'))
 
 
 def print_size_ext_pairs():
     for key, extension_heap in extension_dictionary.items():
-        print(key + ' - ' + 'Total size: ' + format_bytes(extension_heap.size))
+        print(key + ' - ' + 'Total size: ' + format_bytes(extension_heap.total_size))
 
 
 def increment_file_count(amount):
@@ -67,24 +76,39 @@ def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and 
             f = File(os.path.join(abs_path, file))
             if f.extension in extension_dictionary.keys():  # check if the corresponding heap exists for extension x
                 hashable_heap = extension_dictionary[f.extension]
-                hashable_heap.size += f.size
+                hashable_heap.total_size += f.size
                 heapq.heappush(hashable_heap.heap, f)
             elif f.extension != '':  # if the heap does not exist, create and add with current file
                 new_heap = HashableHeap(f.extension)
-                new_heap.size = f.size
-                heapq.heappush(new_heap.heap, f)
+                new_heap.total_size = f.size
                 extension_dictionary[f.extension] = new_heap
+                heapq.heappush(extension_dictionary[f.extension].heap, f)
         except FileNotFoundError:
             print(os.path.join(abs_path, file))
             print('No permission')
 
 
+def find_not_recently_accessed_files():
+    print('Finding not recently accessed files...')
+    for key, extension_heap in extension_dictionary.items():    # go through dictionary, printing each heap
+        find_not_recently_accessed_file_in_heap(extension_heap)
+
+
+def find_not_recently_accessed_file_in_heap(extension_heap):
+    for file in extension_heap.heap:
+        days_since_last_access = file.time_since_last_access
+
+        if days_since_last_access is not None:
+            if days_since_last_access > NOT_RECENTLY_ACCESSED_THRESHOLD:
+                heapq.heappush(not_recently_accessed_files, file)
+
+
 def set_root_dir():
     global ROOT_DIR
 
-    if user_os.startswith('darwin'):  # darwin is MacOS X
+    if USER_OS.startswith('darwin'):  # darwin is MacOS X
         ROOT_DIR = '/Users/' + getpass.getuser()
-    elif user_os.startswith('linux'):
+    elif USER_OS.startswith('linux'):
         ROOT_DIR = '~'
     elif user_os_is_windows():
         ROOT_DIR = 'C:\\'  # @TODO: find the user files dir in Windows and use it instead to exclude os files
@@ -99,7 +123,7 @@ def print_file(file_name):
 def is_hidden_dir(file_path):
     name = set_name(file_path)
 
-    if user_os.startswith('win32' or 'nt'):
+    if USER_OS.startswith('win32' or 'nt'):
         return has_hidden_attribute(file_path)
     else:
         return name.startswith('.')
@@ -113,7 +137,7 @@ def set_name(file_path):
 
 
 def user_os_is_windows():
-    return user_os.startswith('win32' or 'nt')
+    return USER_OS.startswith('win32' or 'nt')
 
 
 def has_hidden_attribute(filepath):
@@ -126,6 +150,7 @@ def has_hidden_attribute(filepath):
 
 
 def adjust_plot_style():
+    global IPython_default  # reference to the global var.
     IPython_default = plt.rcParams.copy()  # copy the default plot settings
 
     colors = cycler('color',
@@ -181,7 +206,7 @@ def get_extension_to_size_array_tuples_sorted():
 
     for w in sorted(extension_dictionary, key=extension_dictionary.get):
         x.append(w)
-        y.append(extension_dictionary[w].size / 1000000)
+        y.append(extension_dictionary[w].total_size / 1000000)
 
     return x, y
 
@@ -197,11 +222,47 @@ def format_bytes(size):
     return str(size) + ' ' + power_labels[n] + 'bytes'
 
 
+def print_not_recently_accessed_files():
+    sort_not_recently_accessed_based_on_importance_score()
+    heapq.heappop(not_recently_accessed_files)
+
+    for i in range(0, 19):  # print the first 20 files with highest delete priority
+        file = heapq.heappop(not_recently_accessed_files)
+        print(str(i) + ') ' + file.path + ' time: ' + str(file.time_since_last_access)
+              + ' size: ' + str(file.size) + ' delete priority: ' + str(file.delete_priority))
+
+
+def sort_not_recently_accessed_based_on_importance_score():
+    # sort the files with a function that calculates a priority to delete
+    # based on coefficients FILE_SIZE_COEFFICIENT and LAST_ACCESS_DATE_COEFFICIENT
+    not_recently_accessed_files.sort(key=lambda file: get_delete_priority(file))
+
+
+def get_delete_priority(file):
+    assign_priority_score(file)
+    return file.delete_priority
+
+
+def assign_priority_score(file):
+    time_since_last_access = file.time_since_last_access
+    file_size_normalized = normalize_file_size(file.size)
+    delete_priority = time_since_last_access * LAST_ACCESS_DATE_COEFFICIENT \
+                      + FILE_SIZE_COEFFICIENT * file_size_normalized
+    file.delete_priority = delete_priority
+
+
+def normalize_file_size(size):  # We need to normalize the file size in order to make it comparable with access date
+    return size / NORMALIZATION_RATE
+
+
 # TODO take these into a main file
 set_root_dir()
 start = time.time()
 find_all_files_and_dirs(ROOT_DIR)
+find_not_recently_accessed_files()
+print_not_recently_accessed_files()
 print_size_ext_pairs()
+# print_all_files()
 end = time.time()
 print('Number of files found: ' + str(num_of_files))
 time_passed = end - start
@@ -209,5 +270,3 @@ print('Analysis duration: ' + str(time_passed))
 adjust_plot_style()
 plot_extension_vs_totalsize_bar()
 plot_extension_vs_totalsize_treemap()
-
-
