@@ -5,6 +5,7 @@ import os
 import time
 import heapq
 from numpy import unicode
+from collections import OrderedDict
 
 # Project files
 from File import File
@@ -28,8 +29,22 @@ NORMALIZATION_RATE = 1/100000
 # Plot styles are overridden in adjust_plot_style function, hold a reference to defaults to reset if needed
 IPython_default = ''
 
-num_of_files = 0
-extension_dictionary = {}  # this dictionary maps the extensions to the corresponding max heaps
+num_of_files_found = 0
+total_size_of_found_files = 0
+
+extension_dictionary = {}  # maps the extensions to the corresponding max heaps
+# Holds number of of files in the following size bins:
+# 0-1KB, 1-100KB, 100-500KB, 500KB-1MB, 1MB - 5MB, 5MB - 50MB, 50MB-100MB, 100MB-500MB, 500MB-1GB, 1GB-10GB, >10GB
+count_to_size_bins = {"0-1KB": 0, "1KB-100KB": 0, "100KB-500KB": 0, "500KB-1MB": 0, "1MB-5MB": 0,
+                      "5MB-50MB": 0, "50MB-100MB": 0, "100MB-500MB": 0, "500MB-1GB": 0, "1GB-10GB": 0, ">10GB": 0}
+count_to_size_bins_cumulative = {}
+# Holds total size of files in the following size bins:
+# 0-1KB, 1-100KB, 100-500KB, 500KB-1MB, 1MB - 5MB, 5MB - 50MB, 50MB-100MB, 100MB-500MB, 500MB-1GB, 1GB-10GB, >10GB
+total_size_to_size_bins = {"0-1KB": 0, "1KB-100KB": 0, "100KB-500KB": 0,
+                           "500KB-1MB": 0, "1MB-5MB": 0, "5MB-50MB": 0, "50MB-100MB": 0,
+                           "100MB-500MB": 0, "500MB-1GB": 0, "1GB-10GB": 0, ">10GB": 0}
+total_size_to_size_bins_cumulative = {}
+
 not_recently_accessed_files = []  # not recently accessed files is a max heap, depending on file sizes
 
 
@@ -66,14 +81,16 @@ def print_size_ext_pairs():
 
 
 def increment_file_count(amount):
-    global num_of_files
-    num_of_files += amount
+    global num_of_files_found
+    num_of_files_found += amount
 
 
 def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and adds to heap
     for file in directory:
         try:
             f = File(os.path.join(abs_path, file))
+            # check the size and increment the frequency here
+            add_to_bins(f)
             if f.extension in extension_dictionary.keys():  # check if the corresponding heap exists for extension x
                 hashable_heap = extension_dictionary[f.extension]
                 hashable_heap.total_size += f.size
@@ -86,6 +103,110 @@ def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and 
         except FileNotFoundError:
             print(os.path.join(abs_path, file))
             print('No permission')
+
+
+# Holds total size of files in the following size bins:
+# 0-1KB, 1-100KB, 100-500KB, 500KB-1MB, 1MB - 5MB, 5MB - 50MB, 50MB-100MB, 100MB-500MB, 500MB-1GB, 1GB-10GB, >10GB
+def add_to_bins(file):
+    global total_size_of_found_files
+
+    size_formatted = format_bytes(file.size)
+    split = size_formatted.split()
+    size = float(split[0])
+    magnitude = split[1]
+    total_size_of_found_files += file.size
+
+    if magnitude[0:4] == "byte":
+        total_size_to_size_bins["0-1KB"] += file.size
+        count_to_size_bins["0-1KB"] += 1
+    elif magnitude[0:4] == "Kilo":
+        if int(size) < 100:
+            total_size_to_size_bins["1KB-100KB"] += file.size
+            count_to_size_bins["1KB-100KB"] += 1
+        elif int(size) < 500:
+            total_size_to_size_bins["100KB-500KB"] += file.size
+            count_to_size_bins["100KB-500KB"] += 1
+        else:
+            total_size_to_size_bins["500KB-1MB"] += file.size
+            count_to_size_bins["500KB-1MB"] += 1
+    elif magnitude[0:4] == "Mega":
+        if size < 5:
+            total_size_to_size_bins["1MB-5MB"] += file.size
+            count_to_size_bins["1MB-5MB"] += 1
+        elif size < 50:
+            total_size_to_size_bins["5MB-50MB"] += file.size
+            count_to_size_bins["5MB-50MB"] += 1
+        elif size < 100:
+            total_size_to_size_bins["50MB-100MB"] += file.size
+            count_to_size_bins["50MB-100MB"] += 1
+        elif size < 500:
+            total_size_to_size_bins["100MB-500MB"] += file.size
+            count_to_size_bins["100MB-500MB"] += 1
+        else:
+            total_size_to_size_bins["500MB-1GB"] += file.size
+            count_to_size_bins["500MB-1GB"] += 1
+    elif magnitude[0:4] == "Giga":
+        if size < 10:
+            total_size_to_size_bins["1GB-10GB"] += file.size
+            count_to_size_bins["1GB-10GB"] += 1
+        else:
+            total_size_to_size_bins[">10GB"] += file.size
+            count_to_size_bins[">10GB"] += 1
+
+
+def convert_bins_to_percentage():
+    for key, value in count_to_size_bins.items():
+        count_to_size_bins[key] = (value * 100) / num_of_files_found
+
+    for key, value in total_size_to_size_bins.items():
+        total_size_to_size_bins[key] = (value * 100) / total_size_of_found_files
+
+
+def fill_cumulative_bins():
+    global count_to_size_bins_cumulative
+    global total_size_to_size_bins_cumulative
+
+    count_to_size_bins_cumulative = OrderedDict(count_to_size_bins)
+    total_size_to_size_bins_cumulative = OrderedDict(total_size_to_size_bins)
+
+    previous = 0
+    for key, value in count_to_size_bins_cumulative.items():
+        count_to_size_bins_cumulative[key] = value + previous
+        previous = count_to_size_bins_cumulative[key]
+
+    previous = 0
+    for key, value in total_size_to_size_bins_cumulative.items():
+        total_size_to_size_bins_cumulative[key] = value + previous
+        previous = total_size_to_size_bins_cumulative[key]
+
+
+def print_distributions():
+    for key, value in count_to_size_bins.items():
+        print(key + ': ' + str(value))
+
+    for key, value in count_to_size_bins_cumulative.items():
+        print(key + ': ' + str(value))
+
+    for key, value in total_size_to_size_bins.items():
+        print(key + ', Total size: ' + format_bytes(value))
+
+    for key, value in total_size_to_size_bins_cumulative.items():
+        print(key + ', Total size: ' + format_bytes(value))
+
+
+
+def print_distributions_percentage():
+    for key, value in count_to_size_bins.items():
+        print(key + ': ' + str(value))
+
+    for key, value in count_to_size_bins_cumulative.items():
+        print(key + ': ' + str(value))
+
+    for key, value in total_size_to_size_bins.items():
+        print(key + ', Total size: ' + str(value))
+
+    for key, value in total_size_to_size_bins_cumulative.items():
+        print(key + ', Total size: ' + str(value))
 
 
 def find_not_recently_accessed_files():
@@ -130,7 +251,8 @@ def is_hidden_dir(file_path):
 
 
 def set_name(file_path):
-    split = file_path.split('\\') if user_os_is_windows() else file_path.split('/')
+    split = file_path.split('\\') \
+        if user_os_is_windows() else file_path.split('/')
 
     name = split[-1]  # take the last item
     return name
@@ -229,7 +351,7 @@ def print_not_recently_accessed_files():
     for i in range(0, 19):  # print the first 20 files with highest delete priority
         file = heapq.heappop(not_recently_accessed_files)
         print(str(i) + ') ' + file.path + ' time: ' + str(file.time_since_last_access)
-              + ' size: ' + str(file.size) + ' delete priority: ' + str(file.delete_priority))
+              + ' size: ' + format_bytes(file.size) + ' delete priority: ' + str(file.delete_priority))
 
 
 def sort_not_recently_accessed_based_on_importance_score():
@@ -255,6 +377,77 @@ def normalize_file_size(size):  # We need to normalize the file size in order to
     return size / NORMALIZATION_RATE
 
 
+def plot_count_to_size_distribution():
+    x = []
+    y = []
+
+    for key, value in count_to_size_bins.items():
+        x.append(key)
+        y.append(value)
+
+    plt.figure(figsize=(30, 20))
+    plt.bar(x, y, align='edge', width=0.8)
+    plt.title("File count % to size range", fontsize=23, fontweight="bold")
+    plt.xlabel('Range', fontsize=25)
+    plt.ylabel('Percentage of files covered (%)', fontsize=25)
+    plt.xticks(fontsize=20, fontweight='bold')
+    plt.yticks(fontsize=20, fontweight='bold')
+    plt.show()
+
+
+def plot_total_size_to_size_range_distribution():
+    x = []
+    y = []
+
+    for key, value in total_size_to_size_bins.items():
+        x.append(key)
+        y.append(value)
+
+    plt.figure(figsize=(30, 20))
+    plt.bar(x, y, align='edge', width=0.8)
+    plt.title('Total size % to size range', fontsize=23, fontweight='bold')
+    plt.xlabel('Range', fontsize=25)
+    plt.ylabel('Total Size in Range (%)', fontsize=25)
+    plt.xticks(fontsize=20, fontweight='bold')
+    plt.yticks(fontsize=20, fontweight='bold')
+    plt.show()
+
+
+def plot_count_to_size_distribution_cumulative():
+    x = []
+    y = []
+
+    for key, value in count_to_size_bins_cumulative.items():
+        x.append(key)
+        y.append(value)
+
+    plt.figure(figsize=(30, 20))
+    plt.bar(x, y, align='edge', width=0.8)
+    plt.title("File count % to size range (Cumulative)", fontsize=23, fontweight="bold")
+    plt.xlabel('Range', fontsize=25)
+    plt.ylabel('Percentage of files covered (%)', fontsize=25)
+    plt.xticks(fontsize=20, fontweight='bold')
+    plt.yticks(fontsize=20, fontweight='bold')
+    plt.show()
+
+def plot_size_range_to_total_size_distribution_cumulative():
+    x = []
+    y = []
+
+    for key, value in total_size_to_size_bins_cumulative.items():
+        x.append(key)
+        y.append(value)
+
+    plt.figure(figsize=(30, 20))
+    plt.bar(x, y, align='edge', width=0.8)
+    plt.title("Total size % to size range (Cumulative)", fontsize=23, fontweight="bold")
+    plt.xlabel('Range', fontsize=25)
+    plt.ylabel('Total size covered (%)', fontsize=25)
+    plt.xticks(fontsize=20, fontweight='bold')
+    plt.yticks(fontsize=20, fontweight='bold')
+    plt.show()
+
+
 # TODO take these into a main file
 set_root_dir()
 start = time.time()
@@ -262,11 +455,21 @@ find_all_files_and_dirs(ROOT_DIR)
 find_not_recently_accessed_files()
 print_not_recently_accessed_files()
 print_size_ext_pairs()
-# print_all_files()
+fill_cumulative_bins()
+print_distributions()
+plot_count_to_size_distribution()
+plot_total_size_to_size_range_distribution()
+convert_bins_to_percentage()
+fill_cumulative_bins()
+plot_count_to_size_distribution_cumulative()
+plot_size_range_to_total_size_distribution_cumulative()
+print_distributions_percentage()
 end = time.time()
-print('Number of files found: ' + str(num_of_files))
+print('Number of files found: ' + str(num_of_files_found))
 time_passed = end - start
 print('Analysis duration: ' + str(time_passed))
 adjust_plot_style()
 plot_extension_vs_totalsize_bar()
 plot_extension_vs_totalsize_treemap()
+
+
