@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import getpass
 import sys
 import ctypes
@@ -38,6 +40,7 @@ extension_dictionary = {}  # maps the extensions to the corresponding max heaps
 count_to_size_bins = {"0-1KB": 0, "1KB-100KB": 0, "100KB-500KB": 0, "500KB-1MB": 0, "1MB-5MB": 0,
                       "5MB-50MB": 0, "50MB-100MB": 0, "100MB-500MB": 0, "500MB-1GB": 0, "1GB-10GB": 0, ">10GB": 0}
 count_to_size_bins_cumulative = {}
+
 # Holds total size of files in the following size bins:
 # 0-1KB, 1-100KB, 100-500KB, 500KB-1MB, 1MB - 5MB, 5MB - 50MB, 50MB-100MB, 100MB-500MB, 500MB-1GB, 1GB-10GB, >10GB
 total_size_to_size_bins = {"0-1KB": 0, "1KB-100KB": 0, "100KB-500KB": 0,
@@ -46,7 +49,7 @@ total_size_to_size_bins = {"0-1KB": 0, "1KB-100KB": 0, "100KB-500KB": 0,
 total_size_to_size_bins_cumulative = {}
 
 not_recently_accessed_files = []  # not recently accessed files is a max heap, depending on file sizes
-
+top_20_not_recently_accessed = [None] * 21  # index 0 is empty 1..20 holds not recently used files
 
 def find_all_files_and_dirs(root_dir):
     # root_dir is the parent of all dirs
@@ -100,9 +103,8 @@ def add_to_dictionary(directory, abs_path):  # Creates a file obj from path and 
                 new_heap.total_size = f.size
                 extension_dictionary[f.extension] = new_heap
                 heapq.heappush(extension_dictionary[f.extension].heap, f)
-        except FileNotFoundError:
-            print(os.path.join(abs_path, file))
-            print('No permission')
+        except OSError:     # No permission
+            pass
 
 
 # Holds total size of files in the following size bins:
@@ -219,22 +221,33 @@ def find_not_recently_accessed_file_in_heap(extension_heap):
     for file in extension_heap.heap:
         days_since_last_access = file.time_since_last_access
 
-        if days_since_last_access is not None:
+        if days_since_last_access is not None:  # fill not recently used files heap
             if days_since_last_access > NOT_RECENTLY_ACCESSED_THRESHOLD:
                 heapq.heappush(not_recently_accessed_files, file)
 
 
-def set_root_dir():
+def fill_top_20_not_recently_accessed():
+    for i in range(1, 21):
+        file = heapq.heappop(not_recently_accessed_files)
+        top_20_not_recently_accessed[i] = file
+
+
+def set_default_root_dir():
     global ROOT_DIR
 
     if USER_OS.startswith('darwin'):  # darwin is MacOS X
-        ROOT_DIR = '/Users/' + getpass.getuser()
+        ROOT_DIR = '/Users/' + getpass.getuser() + '/Documents/CppProjects'
     elif USER_OS.startswith('linux'):
         ROOT_DIR = '~'
     elif user_os_is_windows():
         ROOT_DIR = 'C:\\'  # @TODO: find the user files dir in Windows and use it instead to exclude os files
     else:
         print('Your OS is not supported')
+
+
+def set_custom_root_dir(path):
+    global ROOT_DIR
+    ROOT_DIR = path
 
 
 def print_file(file_name):
@@ -295,8 +308,8 @@ def plot_extension_vs_totalsize_bar():
     plt.title("Extension Distribution by Size", fontsize=23, fontweight="bold")
     plt.xlabel('Extensions', fontsize=25)
     plt.ylabel('Total Size (MB)', fontsize=25)
-    plt.xticks(fontsize=20, fontweight='bold')
-    plt.yticks(fontsize=20, fontweight='bold')
+    plt.xticks(fontsize=8, fontweight='bold')
+    plt.yticks(fontsize=8, fontweight='bold')
     plt.show()
 
 
@@ -306,13 +319,15 @@ def plot_extension_vs_totalsize_treemap():
     # create a color palette, mapped to these values
     color_map = generate_blue_color_map(y)
 
-    squarify.plot(label=x[0:19], sizes=y[0:19], color=color_map)
-    plt.title("Extension Treemap by Size", fontsize=23, fontweight="bold")
+    try:
+        squarify.plot(label=x[0:19], sizes=y[0:19], color=color_map)
+        plt.title("Extension Treemap by Size", fontsize=23, fontweight="bold")
 
-    # Remove our axes and display the plot
-    plt.axis('off')
-    plt.show()
-
+        # Remove our axes and display the plot
+        plt.axis('off')
+        plt.show()
+    except Exception:
+        print('An unexpected error occurred while displaying the treemap')
 
 def generate_blue_color_map(data_set):
     cmap = matplotlib.cm.Blues
@@ -346,12 +361,13 @@ def format_bytes(size):
 
 def print_not_recently_accessed_files():
     sort_not_recently_accessed_based_on_importance_score()
-    heapq.heappop(not_recently_accessed_files)
+    i = 1
 
-    for i in range(0, 19):  # print the first 20 files with highest delete priority
-        file = heapq.heappop(not_recently_accessed_files)
-        print(str(i) + ') ' + file.path + ' time: ' + str(file.time_since_last_access)
-              + ' size: ' + format_bytes(file.size) + ' delete priority: ' + str(file.delete_priority))
+    for file in top_20_not_recently_accessed:
+        if file:
+            print(str(i) + ') ' + file.path)
+            i += 1
+
 
 
 def sort_not_recently_accessed_based_on_importance_score():
@@ -367,14 +383,10 @@ def get_delete_priority(file):
 
 def assign_priority_score(file):
     time_since_last_access = file.time_since_last_access
-    file_size_normalized = normalize_file_size(file.size)
+    file_size_normalized = file.size * NORMALIZATION_RATE
     delete_priority = time_since_last_access * LAST_ACCESS_DATE_COEFFICIENT \
                       + FILE_SIZE_COEFFICIENT * file_size_normalized
     file.delete_priority = delete_priority
-
-
-def normalize_file_size(size):  # We need to normalize the file size in order to make it comparable with access date
-    return size / NORMALIZATION_RATE
 
 
 def plot_count_to_size_distribution():
@@ -385,13 +397,13 @@ def plot_count_to_size_distribution():
         x.append(key)
         y.append(value)
 
-    plt.figure(figsize=(30, 20))
+    plt.figure(figsize=(15, 7))
     plt.bar(x, y, align='edge', width=0.8)
     plt.title("File count % to size range", fontsize=23, fontweight="bold")
     plt.xlabel('Range', fontsize=25)
     plt.ylabel('Percentage of files covered (%)', fontsize=25)
-    plt.xticks(fontsize=20, fontweight='bold')
-    plt.yticks(fontsize=20, fontweight='bold')
+    plt.xticks(fontsize=8, fontweight='bold')
+    plt.yticks(fontsize=8, fontweight='bold')
     plt.show()
 
 
@@ -403,13 +415,13 @@ def plot_total_size_to_size_range_distribution():
         x.append(key)
         y.append(value)
 
-    plt.figure(figsize=(30, 20))
+    plt.figure(figsize=(15, 7))
     plt.bar(x, y, align='edge', width=0.8)
-    plt.title('Total size % to size range', fontsize=23, fontweight='bold')
+    plt.title('Total size % to size range', fontsize=15)
     plt.xlabel('Range', fontsize=25)
     plt.ylabel('Total Size in Range (%)', fontsize=25)
-    plt.xticks(fontsize=20, fontweight='bold')
-    plt.yticks(fontsize=20, fontweight='bold')
+    plt.xticks(fontsize=8, fontweight='bold')
+    plt.yticks(fontsize=8, fontweight='bold')
     plt.show()
 
 
@@ -421,14 +433,15 @@ def plot_count_to_size_distribution_cumulative():
         x.append(key)
         y.append(value)
 
-    plt.figure(figsize=(30, 20))
+    plt.figure(figsize=(15, 7))
     plt.bar(x, y, align='edge', width=0.8)
     plt.title("File count % to size range (Cumulative)", fontsize=23, fontweight="bold")
     plt.xlabel('Range', fontsize=25)
     plt.ylabel('Percentage of files covered (%)', fontsize=25)
-    plt.xticks(fontsize=20, fontweight='bold')
-    plt.yticks(fontsize=20, fontweight='bold')
+    plt.xticks(fontsize=8, fontweight='bold')
+    plt.yticks(fontsize=8, fontweight='bold')
     plt.show()
+
 
 def plot_size_range_to_total_size_distribution_cumulative():
     x = []
@@ -438,38 +451,84 @@ def plot_size_range_to_total_size_distribution_cumulative():
         x.append(key)
         y.append(value)
 
-    plt.figure(figsize=(30, 20))
+    plt.figure(figsize=(15, 7))
     plt.bar(x, y, align='edge', width=0.8)
     plt.title("Total size % to size range (Cumulative)", fontsize=23, fontweight="bold")
     plt.xlabel('Range', fontsize=25)
     plt.ylabel('Total size covered (%)', fontsize=25)
-    plt.xticks(fontsize=20, fontweight='bold')
-    plt.yticks(fontsize=20, fontweight='bold')
+    plt.xticks(fontsize=8, fontweight='bold')
+    plt.yticks(fontsize=8, fontweight='bold')
     plt.show()
 
 
-# TODO take these into a main file
-set_root_dir()
-start = time.time()
-find_all_files_and_dirs(ROOT_DIR)
-find_not_recently_accessed_files()
-print_not_recently_accessed_files()
-print_size_ext_pairs()
-fill_cumulative_bins()
-print_distributions()
-plot_count_to_size_distribution()
-plot_total_size_to_size_range_distribution()
-convert_bins_to_percentage()
-fill_cumulative_bins()
-plot_count_to_size_distribution_cumulative()
-plot_size_range_to_total_size_distribution_cumulative()
-print_distributions_percentage()
-end = time.time()
-print('Number of files found: ' + str(num_of_files_found))
-time_passed = end - start
-print('Analysis duration: ' + str(time_passed))
-adjust_plot_style()
-plot_extension_vs_totalsize_bar()
-plot_extension_vs_totalsize_treemap()
+def remove_unused_file(index):
+    confirm = input("Are you sure you want to delete this file? Type 'y' to proceed, 'r' to return\n")
+    while confirm == 'y':
+        os.remove(top_20_not_recently_accessed[int(index)].path)
+        wanna_continue = input('Continue deleting? Type y or n \n')
+        if wanna_continue == 'n':
+            break
 
 
+def read_command():
+    command = input("Type 'show_size_stats' to see the distribution of files among different size bins, \n" +
+                    "'show_extension_stats' to see the distribution of files among different extensions \n" +
+                    "and 'run_cleaner' to see advices about which files are unused and may be deleted, \n" +
+                    "type 'quit' to exit\n")
+    print(command)
+    return command
+
+
+def main():
+    print("Welcome to blink file system analyzer")
+    print("Starting the analysis, this may take a while...")
+    start = time.time()
+    find_all_files_and_dirs(ROOT_DIR)
+    end = time.time()
+    time_passed = end - start
+    print('Analysis duration: ' + str(time_passed))
+    print('Number of files found: ' + str(num_of_files_found)
+          + ' with total size of: ' + format_bytes(total_size_of_found_files))
+
+    command = ''
+
+    while command != 'quit':
+        command = read_command()
+
+        if command == 'show_size_stats':
+            fill_cumulative_bins()
+            print_distributions()
+            plot_count_to_size_distribution()
+            plot_total_size_to_size_range_distribution()
+            convert_bins_to_percentage()
+            fill_cumulative_bins()
+            plot_count_to_size_distribution_cumulative()
+            plot_size_range_to_total_size_distribution_cumulative()
+            print_distributions_percentage()
+        elif command == 'show_extension_stats':
+            print_size_ext_pairs()
+            adjust_plot_style()
+            plot_extension_vs_totalsize_bar()
+            plot_extension_vs_totalsize_treemap()
+        elif command == 'run_cleaner':
+            find_not_recently_accessed_files()
+            fill_top_20_not_recently_accessed()
+            print_not_recently_accessed_files()
+            index = input("Type the index of the file you want to delete to remove or type 'r' to return\n")
+
+            if index != 'r':
+                while int(index) > 20 or int(index) < 1 and index != 'r':
+                    index = input("Invalid input, try again, r to return \n")
+                else:
+                    remove_unused_file(index)
+
+    print('Goodbye!')
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 1:    # If the user did not pass any path, use the defaults
+        set_default_root_dir()
+    else:
+        set_custom_root_dir(sys.argv[1])
+
+    main()
