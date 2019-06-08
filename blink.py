@@ -236,7 +236,7 @@ def set_default_root_dir():
     global ROOT_DIR
 
     if USER_OS.startswith('darwin'):  # darwin is MacOS X
-        ROOT_DIR = '/Users/' + getpass.getuser() + '/Documents/CppProjects'
+        ROOT_DIR = '/Users/' + getpass.getuser()
     elif USER_OS.startswith('linux'):
         ROOT_DIR = '~'
     elif user_os_is_windows():
