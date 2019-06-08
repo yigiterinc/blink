@@ -32,12 +32,11 @@ class File:
         months = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
                   'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
 
-
         try:
             if type(day) is not None and type(year) is not None and type(month) is not None:
                 d1 = date(int(year), months[month], int(day))
                 delta = today - d1
                 return delta.days
         except ValueError:
-            print('last_access_date: ' + self.last_access_date + ' parsed D / M / Y: ' + day + '/'
-                  + month + '/' + year)
+            print('last_access_date: ' + self.last_access_date + ' parsed D / M / Y: '
+                  + day + '/' + month + '/' + year)

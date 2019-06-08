@@ -183,32 +183,37 @@ def fill_cumulative_bins():
 
 
 def print_distributions():
+    print('Printing number of files among size ranges')
     for key, value in count_to_size_bins.items():
-        print(key + ': ' + str(value))
+        print(key + ': ' + str(value) + ' files')
 
+    print('Printing number of files among size ranges (Cumulative)')
     for key, value in count_to_size_bins_cumulative.items():
-        print(key + ': ' + str(value))
+        print(key + ': ' + str(value) + ' files')
 
+    print('Printing the total sizes of size bins')
     for key, value in total_size_to_size_bins.items():
         print(key + ', Total size: ' + format_bytes(value))
 
+    print('Printing the total sizes of size bins (Cumulative)')
     for key, value in total_size_to_size_bins_cumulative.items():
         print(key + ', Total size: ' + format_bytes(value))
-
 
 
 def print_distributions_percentage():
+    print('Printing the percentages')
+
     for key, value in count_to_size_bins.items():
-        print(key + ': ' + str(value))
+        print(key + ': ' + str(round(value, 2)) + '%')
 
     for key, value in count_to_size_bins_cumulative.items():
-        print(key + ': ' + str(value))
+        print(key + ': ' + str(round(value, 2)) + '%')
 
     for key, value in total_size_to_size_bins.items():
-        print(key + ', Total size: ' + str(value))
+        print(key + ', Total size: ' + str(round(value, 2)) + '%')
 
     for key, value in total_size_to_size_bins_cumulative.items():
-        print(key + ', Total size: ' + str(value))
+        print(key + ', Total size: ' + str(round(value, 2)) + '%')
 
 
 def find_not_recently_accessed_files():
@@ -329,6 +334,7 @@ def plot_extension_vs_totalsize_treemap():
     except Exception:
         print('An unexpected error occurred while displaying the treemap')
 
+
 def generate_blue_color_map(data_set):
     cmap = matplotlib.cm.Blues
     min_value = min(data_set)
@@ -367,7 +373,6 @@ def print_not_recently_accessed_files():
         if file:
             print(str(i) + ') ' + file.path)
             i += 1
-
 
 
 def sort_not_recently_accessed_based_on_importance_score():
@@ -461,13 +466,12 @@ def plot_size_range_to_total_size_distribution_cumulative():
     plt.show()
 
 
-def remove_unused_file(index):
+def remove_unused_file():
     confirm = input("Are you sure you want to delete this file? Type 'y' to proceed, 'r' to return\n")
     while confirm == 'y':
+        index = input("Type the index of the file you want to delete\n")
         os.remove(top_20_not_recently_accessed[int(index)].path)
-        wanna_continue = input('Continue deleting? Type y or n \n')
-        if wanna_continue == 'n':
-            break
+        confirm = input('Continue deleting? Type y or n \n')
 
 
 def read_command():
@@ -520,7 +524,7 @@ def main():
                 while int(index) > 20 or int(index) < 1 and index != 'r':
                     index = input("Invalid input, try again, r to return \n")
                 else:
-                    remove_unused_file(index)
+                    remove_unused_file()
 
     print('Goodbye!')
 
